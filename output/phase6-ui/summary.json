@@ -1,0 +1,50 @@
+{
+  "startMetrics": {
+    "scrollHeight": 768,
+    "innerHeight": 768,
+    "scrollWidth": 1366,
+    "innerWidth": 1366,
+    "bodyOverflow": "hidden",
+    "utilityMode": "log",
+    "phase": "start",
+    "battlePhase": null,
+    "label": "start",
+    "fitsViewport": true
+  },
+  "chronicleMetrics": {
+    "scrollHeight": 768,
+    "innerHeight": 768,
+    "scrollWidth": 1366,
+    "innerWidth": 1366,
+    "bodyOverflow": "hidden",
+    "utilityMode": "chronicle",
+    "phase": "start",
+    "battlePhase": null,
+    "label": "chronicle",
+    "fitsViewport": true
+  },
+  "chronicleState": {
+    "previewOpen": true,
+    "selectedPage": 1,
+    "dockTitle": "📜 星典\n18ページ残り",
+    "previewPageCount": 20
+  },
+  "battleMetrics": {
+    "scrollHeight": 768,
+    "innerHeight": 768,
+    "scrollWidth": 1366,
+    "innerWidth": 1366,
+    "bodyOverflow": "hidden",
+    "utilityMode": "chronicle",
+    "phase": "battle",
+    "battlePhase": "defendPhase",
+    "label": "battle",
+    "fitsViewport": true
+  },
+  "battleState": {
+    "utilityMode": "chronicle",
+    "currentBattle": "defendPhase",
+    "controlsText": "フェイズ: バトルフェイズ\n攻星術カードをクリックして、画面内で過詠を調整\n↩ 星撃宣言を取り消す"
+  },
+  "errors": []
+}

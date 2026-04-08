@@ -9,6 +9,7 @@ function createUiState() {
   return {
     chroniclePreviewOpen: false,
     selectedChroniclePage: null,
+    utilityPanel: 'log',
     pendingOvercharge: null
   };
 }
@@ -323,31 +324,19 @@ function renderGameState(state) {
   var html = '';
   html += '<div class="game-shell">';
   html += renderTurnBannerHTML(state);
-  html += renderStatusHTML(state.cpu, false, state);
-
-  html += '<div class="field-area cpu-field">';
-  html += '<div class="field-label">── CPUフィールド ──</div>';
-  html += renderFieldHTML(state.cpu.field, false, state);
+  html += '<div class="combat-layout">';
+  html += '<div class="board-stage">';
+  html += renderLaneHTML(state.cpu, false, state);
+  html += renderCenterStageHTML(state);
+  html += renderLaneHTML(state.player, true, state);
+  html += '</div>';
+  html += renderUtilityDockHTML(state);
   html += '</div>';
 
-  if (state.currentBattle) {
-    html += renderBattleZoneHTML(state);
-  }
-
-  html += '<div class="field-area player-field">';
-  html += '<div class="field-label">── プレイヤーフィールド ──</div>';
-  html += renderFieldHTML(state.player.field, true, state);
-  html += '</div>';
-
-  html += renderStatusHTML(state.player, true, state);
+  html += '<div class="command-layout">';
   html += renderSkyWindowHTML(state);
-
-  html += '<div class="bottom-area">';
   html += renderControlsHTML(state);
-  html += renderLogHTML(state.log);
   html += '</div>';
-
-  html += renderChroniclePreviewHTML(state.player);
   html += '</div>';
 
   container.innerHTML = html;
@@ -391,6 +380,108 @@ function renderStatusHTML(player, isSelf, state) {
     '<span class="status-chronicle">星典 [' + stars + '] ' + remaining + '/' + total + '</span>' +
     '<span class="status-sp">SP: ' + player.sp + '</span>' +
   '</div>';
+}
+
+function renderLaneHTML(player, isSelf, state) {
+  var name = isSelf ? 'プレイヤー' : 'CPU';
+  var remaining = getRemainingPages(player);
+  var total = player.chroniclePages.length;
+  var isFocused = player.id === state.activePlayer || (isSelf && isPlayerResponseWindow(state));
+  var shellClass = 'lane-panel ' + (isSelf ? 'lane-panel-player' : 'lane-panel-cpu');
+
+  if (isFocused) {
+    shellClass += ' is-focused';
+  }
+
+  return '<div class="' + shellClass + '">' +
+    '<div class="lane-header">' +
+      '<div class="lane-title-row">' +
+        '<span class="lane-name">' + name + '</span>' +
+        '<span class="lane-badge">' + (isSelf ? 'SELF' : 'CPU') + '</span>' +
+      '</div>' +
+      '<div class="lane-chip-row">' +
+        '<span class="lane-chip">星典 ' + remaining + '/' + total + '</span>' +
+        '<span class="lane-chip">SP ' + player.sp + '</span>' +
+        '<span class="lane-chip">場 ' + player.field.length + '/' + MAX_FIELD_ASTRALS + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="lane-field">' +
+      renderFieldHTML(player.field, isSelf, state) +
+    '</div>' +
+  '</div>';
+}
+
+function renderCenterStageHTML(state) {
+  if (state.currentBattle) {
+    return renderBattleZoneHTML(state);
+  }
+
+  return renderPhaseFocusHTML(state);
+}
+
+function renderPhaseFocusHTML(state) {
+  var activeName = state.activePlayer === 'player' ? 'プレイヤー' : 'CPU';
+  var title = getPhaseDisplayName(state.phase);
+  var hint = '';
+
+  if (state.phase === 'start') {
+    hint = state.activePlayer === 'player' ?
+      '今ターンは何ページ詠むかを決める。SP と星典残量のトレードオフを先に判断。':
+      'CPU が詠み枚数を決めている。星典と SP の変化を確認。';
+  } else if (state.phase === 'main') {
+    hint = state.activePlayer === 'player' ?
+      '天窓から星霊か星命を展開。手番の価値を作るフェイズ。':
+      'CPU が展開判断中。場の枚数差と次の攻撃ラインを観察。';
+  } else if (state.phase === 'battle') {
+    hint = state.activePlayer === 'player' ?
+      '攻めるなら場の星霊を選び、無理ならスキップしてリソースを残す。':
+      'CPU の攻め筋を待機中。防御と星護の受け方を準備。';
+  } else {
+    hint = 'ターンの整理と自動詠みを処理中。次ターンのリソース差を確認。';
+  }
+
+  return '<div class="phase-focus">' +
+    '<div class="phase-focus-top">' +
+      '<div class="phase-focus-title">' + title + '</div>' +
+      '<div class="phase-focus-active">' + activeName + '</div>' +
+    '</div>' +
+    '<div class="phase-focus-text">' + hint + '</div>' +
+    '<div class="phase-focus-meta">' +
+      '<span class="phase-focus-chip">天窓 ' + state.player.skyWindow.length + '</span>' +
+      '<span class="phase-focus-chip">ログ ' + state.log.length + '</span>' +
+      '<span class="phase-focus-chip">次ページ ' +
+        (state.player.chronicleIndex < state.player.chroniclePages.length ?
+          (state.player.chronicleIndex + 1) : 'なし') +
+      '</span>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderUtilityDockHTML(state) {
+  ensureUiState();
+
+  var mode = uiState.utilityPanel || 'log';
+  var html = '<div class="utility-dock">';
+  html += '<div class="utility-dock-header">';
+  html += renderUtilityTabButton('ログ', 'log', mode === 'log');
+  html += renderUtilityTabButton('星典', 'chronicle', mode === 'chronicle');
+  html += '</div>';
+  html += '<div class="utility-dock-body">';
+  if (mode === 'chronicle') {
+    html += renderChroniclePreviewHTML(state.player, { docked: true });
+  } else {
+    html += renderLogHTML(state.log, { docked: true });
+  }
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+function renderUtilityTabButton(label, mode, active) {
+  return '<button class="utility-tab' + (active ? ' is-active' : '') + '"' +
+    ' onclick="setUtilityPanel(\'' + mode + '\')" data-action="utility-' + mode + '">' +
+    label +
+  '</button>';
 }
 
 function renderFieldHTML(field, isPlayer, state) {
@@ -772,9 +863,10 @@ function getPhaseDisplayName(phase) {
   }
 }
 
-function renderLogHTML(logs) {
-  var html = '<div class="log-area">';
-  html += '<div class="log-title">ログ</div>';
+function renderLogHTML(logs, options) {
+  var isDocked = !!(options && options.docked);
+  var html = '<div class="log-area' + (isDocked ? ' is-docked' : '') + '">';
+  html += '<div class="log-title">' + (isDocked ? '戦闘ログ' : 'ログ') + '</div>';
   html += '<div class="log-content" id="log-content">';
 
   var start = Math.max(0, logs.length - 20);
@@ -787,17 +879,26 @@ function renderLogHTML(logs) {
   return html;
 }
 
-function renderChroniclePreviewHTML(player) {
+function renderChroniclePreviewHTML(player, options) {
+  var isDocked = !!(options && options.docked);
+  var isOpen = isDocked ? true : !!uiState.chroniclePreviewOpen;
   var remaining = getRemainingPages(player);
   var nextPageIndex = player.chronicleIndex < player.chroniclePages.length ? player.chronicleIndex : -1;
   var nextCard = nextPageIndex >= 0 ? player.chroniclePages[nextPageIndex] : null;
-  var html = '<div class="chronicle-preview ' + (uiState.chroniclePreviewOpen ? 'is-open' : 'is-collapsed') + '">';
-  html += '<button class="preview-toggle" onclick="toggleChroniclePreview()" data-action="toggle-preview">';
-  html += '<span>📜 星典プレビュー</span>';
-  html += '<span>' + remaining + 'ページ残り / ' + (uiState.chroniclePreviewOpen ? '閉じる' : '展開') + '</span>';
-  html += '</button>';
+  var html = '<div class="chronicle-preview ' + (isOpen ? 'is-open' : 'is-collapsed') + (isDocked ? ' is-docked' : '') + '">';
+  if (isDocked) {
+    html += '<div class="preview-dock-title">';
+    html += '<span>📜 星典</span>';
+    html += '<span>' + remaining + 'ページ残り</span>';
+    html += '</div>';
+  } else {
+    html += '<button class="preview-toggle" onclick="toggleChroniclePreview()" data-action="toggle-preview">';
+    html += '<span>📜 星典プレビュー</span>';
+    html += '<span>' + remaining + 'ページ残り / ' + (isOpen ? '閉じる' : '展開') + '</span>';
+    html += '</button>';
+  }
 
-  if (uiState.chroniclePreviewOpen) {
+  if (isOpen) {
     var selectedPageIndex = getSelectedChroniclePageIndex(player);
     var selectedCard = selectedPageIndex >= 0 ? player.chroniclePages[selectedPageIndex] : null;
     var selectedStatus = selectedPageIndex >= 0 ? getChroniclePageStatus(player, selectedPageIndex) : null;
@@ -1020,6 +1121,7 @@ function renderOverchargeUI(state) {
 function toggleChroniclePreview() {
   ensureUiState();
   uiState.chroniclePreviewOpen = !uiState.chroniclePreviewOpen;
+  uiState.utilityPanel = 'chronicle';
 
   if (uiState.chroniclePreviewOpen && gameState && gameState.player) {
     uiState.selectedChroniclePage = getSelectedChroniclePageIndex(gameState.player);
@@ -1034,6 +1136,19 @@ function selectChroniclePage(pageIndex) {
   if (pageIndex < 0 || pageIndex >= gameState.player.chroniclePages.length) return;
 
   uiState.chroniclePreviewOpen = true;
+  uiState.utilityPanel = 'chronicle';
   uiState.selectedChroniclePage = pageIndex;
+  syncGameState(gameState);
+}
+
+function setUtilityPanel(mode) {
+  ensureUiState();
+  uiState.utilityPanel = mode === 'chronicle' ? 'chronicle' : 'log';
+
+  if (uiState.utilityPanel === 'chronicle' && gameState && gameState.player) {
+    uiState.chroniclePreviewOpen = true;
+    uiState.selectedChroniclePage = getSelectedChroniclePageIndex(gameState.player);
+  }
+
   syncGameState(gameState);
 }

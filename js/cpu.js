@@ -12,32 +12,312 @@
 function executeCpuTurn(state) {
   if (state.isGameOver) return;
 
-  // 1. スタートフェイズ: 詠み判断
   cpuStartPhase(state);
 
-  setTimeout(function() {
+  scheduleStateTask(state, function() {
     if (state.isGameOver) return;
 
-    // 2. メインフェイズ: カード使用
     goToMainPhase(state);
     cpuMainPhase(state);
 
-    setTimeout(function() {
+    scheduleStateTask(state, function() {
       if (state.isGameOver) return;
 
-      // 3. バトルフェイズ: 攻撃判断
       goToBattlePhase(state);
-      var attacked = cpuBattlePhase(state);
 
-      if (!attacked) {
-        // 攻撃しない場合 → エンドフェイズ
-        setTimeout(function() {
+      if (!cpuBattlePhase(state)) {
+        addLog(state, '🜂 CPU は攻め時ではないと判断した');
+        scheduleStateTask(state, function() {
           goToEndPhase(state);
         }, 500);
       }
-      // 攻撃した場合は resolveCurrentBattle → cpuDamageChoice → endBattle → endTurn の流れ
     }, 600);
   }, 600);
+}
+
+// =============================================
+// CPU共通ヘルパー
+// =============================================
+
+function getCpuOverchargeValues(spellCost, availableExtraSP) {
+  var values = [0];
+  var maxOvercharge = clampOvercharge(availableExtraSP, spellCost, availableExtraSP);
+
+  for (var extra = 2; extra <= maxOvercharge; extra += 2) {
+    values.push(extra);
+  }
+
+  return values;
+}
+
+function calcCpuProjectedAttackPower(astral, spell, bonusPower) {
+  var base = astral.power + (astral.tempPowerBoost || 0) + (bonusPower || 0);
+  return base + spell.powerBoost + getResonanceBonus(astral, spell);
+}
+
+function getCpuAttackBonusForAstral(cpu, astral, options) {
+  if (!options || !options.firstAstralBonus) return 0;
+  if (cpu.field.length === 0) return 0;
+  return astral === cpu.field[0] ? options.firstAstralBonus : 0;
+}
+
+function countCpuResonantSpells(cpu, element, timing) {
+  var count = 0;
+
+  for (var i = 0; i < cpu.skyWindow.length; i++) {
+    var card = cpu.skyWindow[i];
+    if (card.type !== 'spell') continue;
+    if (timing && card.timing !== timing) continue;
+    if (card.element === element) count++;
+  }
+
+  return count;
+}
+
+function scoreCpuAstralCard(cpu, astral) {
+  var attackMatches = countCpuResonantSpells(cpu, astral.element, 'attack');
+  var defenseMatches = countCpuResonantSpells(cpu, astral.element, 'defense');
+
+  return astral.power * 3 +
+    attackMatches * 4 +
+    defenseMatches * 3 -
+    astral.cost * 2;
+}
+
+function selectBestCpuAstral(cpu, maxCost) {
+  var bestCard = null;
+  var bestScore = -Infinity;
+
+  for (var i = 0; i < cpu.skyWindow.length; i++) {
+    var card = cpu.skyWindow[i];
+    if (card.type !== 'astral') continue;
+    if (card.cost > cpu.sp) continue;
+    if (typeof maxCost === 'number' && card.cost > maxCost) continue;
+
+    var score = scoreCpuAstralCard(cpu, card);
+    if (cpu.field.length === 0) {
+      score += 8;
+    } else if (cpu.field.length === 1) {
+      score += 3;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestCard = card;
+    }
+  }
+
+  return bestCard;
+}
+
+function getCpuDefenseReserve(state, cpu) {
+  if (!state || !state.player || state.player.field.length === 0) return 0;
+
+  var reserve = 0;
+
+  for (var i = 0; i < cpu.skyWindow.length; i++) {
+    var card = cpu.skyWindow[i];
+    if (card.type !== 'spell' || card.timing !== 'defense') continue;
+
+    if (reserve === 0 || card.cost < reserve) {
+      reserve = card.cost;
+    }
+  }
+
+  return reserve;
+}
+
+function buildCpuDefensePreview(defender, attackPower) {
+  var preview = {
+    canBlock: false,
+    spell: null,
+    overcharge: 0,
+    defensePower: 0,
+    totalCost: 0
+  };
+
+  if (!defender || defender.field.length === 0) {
+    return preview;
+  }
+
+  var defenseAstral = defender.field[0];
+  var spells = getAvailableDefenseSpells(defender.skyWindow, defender.sp);
+
+  for (var i = 0; i < spells.length; i++) {
+    var spell = spells[i];
+    var availableExtra = Math.max(0, defender.sp - spell.cost);
+    var overchargeValues = getCpuOverchargeValues(spell.cost, availableExtra);
+
+    for (var j = 0; j < overchargeValues.length; j++) {
+      var overcharge = overchargeValues[j];
+      var defensePower = calcDefensePower(defenseAstral, spell, overcharge);
+      var totalCost = spell.cost + overcharge;
+      var canBlock = defensePower >= attackPower;
+
+      if (canBlock) {
+        if (!preview.canBlock ||
+            totalCost < preview.totalCost ||
+            (totalCost === preview.totalCost && defensePower < preview.defensePower)) {
+          preview.canBlock = true;
+          preview.spell = spell;
+          preview.overcharge = overcharge;
+          preview.defensePower = defensePower;
+          preview.totalCost = totalCost;
+        }
+      } else if (!preview.canBlock && defensePower > preview.defensePower) {
+        preview.spell = spell;
+        preview.overcharge = overcharge;
+        preview.defensePower = defensePower;
+        preview.totalCost = totalCost;
+      }
+    }
+  }
+
+  return preview;
+}
+
+function selectBestAttackCombo(cpu, spells, opponent, options) {
+  var bestCombo = null;
+  var bestScore = -Infinity;
+  var spAvailable = options && typeof options.spAvailable === 'number' ? options.spAvailable : cpu.sp;
+
+  for (var i = 0; i < cpu.field.length; i++) {
+    var astral = cpu.field[i];
+    var attackBonus = getCpuAttackBonusForAstral(cpu, astral, options);
+
+    for (var j = 0; j < spells.length; j++) {
+      var spell = spells[j];
+      if (spell.cost > spAvailable) continue;
+
+      var overchargeValues = getCpuOverchargeValues(spell.cost, spAvailable - spell.cost);
+
+      for (var k = 0; k < overchargeValues.length; k++) {
+        var overcharge = overchargeValues[k];
+        var attackPower = calcCpuProjectedAttackPower(astral, spell, attackBonus);
+        var totalDamage = calcTotalDamage(spell, overcharge);
+        var defensePreview = buildCpuDefensePreview(opponent, attackPower);
+        var successLikely = !defensePreview.canBlock;
+        var score;
+
+        if (successLikely) {
+          score = totalDamage * 8 + attackPower * 2 - overcharge;
+
+          if (hasResonance(astral, spell)) score += 4;
+          if (totalDamage >= getRemainingPages(opponent)) score += 18;
+          if (opponent.field.length === 0) score += 6;
+        } else {
+          score = attackPower - defensePreview.defensePower - defensePreview.totalCost - 12;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestCombo = {
+            astral: astral,
+            spell: spell,
+            overcharge: overcharge,
+            attackPower: attackPower,
+            totalDamage: totalDamage,
+            defensePreview: defensePreview,
+            successLikely: successLikely,
+            score: score
+          };
+        }
+      }
+    }
+  }
+
+  return bestCombo;
+}
+
+function selectCpuFate(state) {
+  var cpu = state.cpu;
+  var player = state.player;
+  var fates = getAvailableFates(cpu.skyWindow, cpu.sp, cpu.usedFate);
+
+  if (fates.length === 0) return null;
+
+  var basePlan = selectBestAttackCombo(cpu, getAvailableAttackSpells(cpu.skyWindow, cpu.sp), player);
+  var bestFate = null;
+  var bestScore = 0;
+
+  for (var i = 0; i < fates.length; i++) {
+    var fate = fates[i];
+    var score = 0;
+
+    switch (fate.effectType) {
+      case 'chronicle_restore':
+        if (getRemainingPages(cpu) <= 3) score = 20;
+        else if (getRemainingPages(cpu) <= 6) score = 14;
+        else if (getRemainingPages(cpu) <= 8) score = 8;
+        break;
+
+      case 'sp_charge':
+        if (cpu.sp <= 2) score += 10;
+        else if (cpu.sp <= 4) score += 6;
+
+        if (cpu.field.length === 0 &&
+            getAvailableAstrals(cpu.skyWindow, cpu.sp).length === 0 &&
+            getAvailableAstrals(cpu.skyWindow, cpu.sp - fate.cost + fate.value).length > 0) {
+          score += 8;
+        }
+
+        var chargePlan = selectBestAttackCombo(
+          cpu,
+          getAvailableAttackSpells(cpu.skyWindow, cpu.sp - fate.cost + fate.value),
+          player,
+          { spAvailable: cpu.sp - fate.cost + fate.value }
+        );
+
+        if (chargePlan && (!basePlan || chargePlan.score > basePlan.score + 4)) {
+          score += 6;
+        }
+        break;
+
+      case 'power_buff':
+        if (cpu.field.length > 0) {
+          var buffPlan = selectBestAttackCombo(
+            cpu,
+            getAvailableAttackSpells(cpu.skyWindow, cpu.sp - fate.cost),
+            player,
+            { spAvailable: cpu.sp - fate.cost, firstAstralBonus: fate.value }
+          );
+
+          if (buffPlan && buffPlan.successLikely) score += 8;
+          if (buffPlan && (!basePlan || buffPlan.score > basePlan.score + 2)) score += 5;
+        }
+        break;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestFate = fate;
+    }
+  }
+
+  return bestFate;
+}
+
+function selectCpuGuardAstralIndex(player) {
+  var bestRadiant = -1;
+  var bestRadiantPower = Infinity;
+  var bestEclipse = -1;
+  var bestEclipsePower = Infinity;
+
+  for (var i = 0; i < player.field.length; i++) {
+    var astral = player.field[i];
+
+    if (astral.state === 'radiant' && astral.power < bestRadiantPower) {
+      bestRadiantPower = astral.power;
+      bestRadiant = i;
+    }
+
+    if (astral.state === 'eclipse' && astral.power < bestEclipsePower) {
+      bestEclipsePower = astral.power;
+      bestEclipse = i;
+    }
+  }
+
+  return bestRadiant >= 0 ? bestRadiant : bestEclipse;
 }
 
 // =============================================
@@ -46,26 +326,31 @@ function executeCpuTurn(state) {
 
 /**
  * CPUの詠み枚数を決定して実行
+ * @returns {number} 実際に詠んだ枚数
  */
 function cpuStartPhase(state) {
   var cpu = state.cpu;
   var remaining = getRemainingPages(cpu);
   var readCount = 0;
 
-  // 判断ロジック
-  if (cpu.sp < 3 && remaining > 8) {
-    readCount = 2;
-  } else if (cpu.sp < 2 && remaining > 4) {
+  if (cpu.field.length === 0 && getAvailableAstrals(cpu.skyWindow, cpu.sp).length === 0 && remaining > 0) {
     readCount = 1;
-  } else if (cpu.sp >= 6) {
-    readCount = 0; // SPが十分ならめくらない
-  } else if (remaining > 10) {
-    readCount = 1; // 余裕ある
-  } else {
-    readCount = 0; // 温存
   }
 
-  // 残りページ数で制限
+  if (cpu.sp < 3 && remaining > 8) {
+    readCount = Math.max(readCount, 2);
+  } else if (cpu.sp < 2 && remaining > 4) {
+    readCount = Math.max(readCount, 1);
+  } else if (cpu.sp >= 6) {
+    readCount = Math.max(readCount, 0);
+  } else if (remaining > 10 && cpu.sp < 5) {
+    readCount = Math.max(readCount, 1);
+  }
+
+  if (remaining <= 6 && cpu.sp >= 4) {
+    readCount = Math.min(readCount, 1);
+  }
+
   readCount = Math.min(readCount, remaining, MAX_READ_PER_TURN);
 
   for (var i = 0; i < readCount; i++) {
@@ -79,7 +364,8 @@ function cpuStartPhase(state) {
   }
 
   state.readCount = readCount;
-  renderGameState(state);
+  syncGameState(state);
+  return readCount;
 }
 
 // =============================================
@@ -88,46 +374,62 @@ function cpuStartPhase(state) {
 
 /**
  * CPUのメインフェイズ行動
+ * @returns {string[]} 行動ログ用ラベル
  */
 function cpuMainPhase(state) {
   var cpu = state.cpu;
+  var actions = [];
   var name = 'CPU';
 
-  // 1. 星霊が場にいなければ最優先で召喚
+  function useBestAstral(maxCost) {
+    var astral = selectBestCpuAstral(cpu, maxCost);
+
+    if (!astral) return false;
+    if (!spendSP(cpu, astral.cost)) return false;
+    if (!summonAstral(cpu, astral, astral._pageIndex)) return false;
+
+    addLog(state, logSummon(name, astral));
+    actions.push('summon:' + astral.id);
+    return true;
+  }
+
+  function useFateIfSelected() {
+    var fate = selectCpuFate(state);
+
+    if (!fate) return false;
+    if (!applyFateEffect(cpu, fate, fate._pageIndex)) return false;
+
+    addLog(state, logFate(name, fate.name, fate.effectDescription));
+    actions.push('fate:' + fate.id);
+    return true;
+  }
+
+  if (cpu.field.length === 0 && getAvailableAstrals(cpu.skyWindow, cpu.sp).length === 0) {
+    useFateIfSelected();
+  }
+
   if (cpu.field.length === 0) {
-    var astrals = getAvailableAstrals(cpu.skyWindow, cpu.sp);
-    if (astrals.length > 0) {
-      var card = astrals[0];
-      spendSP(cpu, card.cost);
-      summonAstral(cpu, card, card._pageIndex);
-      addLog(state, logSummon(name, card));
+    useBestAstral();
+  }
+
+  useFateIfSelected();
+
+  while (cpu.field.length < MAX_FIELD_ASTRALS) {
+    var reserve = getCpuDefenseReserve(state, cpu);
+    var budget = Math.max(0, cpu.sp - reserve);
+    var canSpendReserve = cpu.field.length < 2;
+
+    if (!useBestAstral(canSpendReserve ? undefined : budget)) {
+      break;
     }
   }
 
-  // 2. フィールドに余裕があれば追加召喚
-  if (cpu.field.length < MAX_FIELD_ASTRALS) {
-    var astrals = getAvailableAstrals(cpu.skyWindow, cpu.sp);
-    for (var i = 0; i < astrals.length; i++) {
-      if (cpu.field.length < MAX_FIELD_ASTRALS) {
-        var card = astrals[i];
-        if (spendSP(cpu, card.cost)) {
-          summonAstral(cpu, card, card._pageIndex);
-          addLog(state, logSummon(name, card));
-        }
-      }
-    }
+  if (actions.length === 0) {
+    addLog(state, '🜂 CPU は布陣を維持した');
   }
 
-  // 3. 星命カードの使用
-  var fates = getAvailableFates(cpu.skyWindow, cpu.sp, cpu.usedFate);
-  if (fates.length > 0) {
-    var fate = fates[0];
-    if (applyFateEffect(cpu, fate, fate._pageIndex)) {
-      addLog(state, logFate(name, fate.name, fate.effectDescription));
-    }
-  }
-
-  renderGameState(state);
+  syncGameState(state);
+  return actions;
 }
 
 // =============================================
@@ -142,77 +444,25 @@ function cpuBattlePhase(state) {
   var cpu = state.cpu;
   var player = state.player;
 
-  // 場に星霊がいなければ攻撃不可
   if (cpu.field.length === 0) return false;
 
-  // 使用可能な攻星術を確認
   var attackSpells = getAvailableAttackSpells(cpu.skyWindow, cpu.sp);
   if (attackSpells.length === 0) return false;
 
-  // 最適な星霊×攻星術の組み合わせを選択
   var bestCombo = selectBestAttackCombo(cpu, attackSpells, player);
-  if (!bestCombo) return false;
+  var shouldAttack = typeof shouldAutoAttackWithCombo === 'function' ?
+    shouldAutoAttackWithCombo(cpu, bestCombo) :
+    !!(bestCombo && bestCombo.successLikely);
 
-  // 星撃宣言
-  var astralIdx = cpu.field.indexOf(bestCombo.astral);
-  playerStarStrike(state, astralIdx);
+  if (!bestCombo || !shouldAttack) return false;
 
-  // 攻星術選択 + 過詠
-  var spellIdx = cpu.skyWindow.indexOf(bestCombo.spell);
-  if (spellIdx >= 0) {
-    playerSelectAttackSpell(state, spellIdx, bestCombo.overcharge);
-    return true;
-  }
+  var astralIndex = cpu.field.indexOf(bestCombo.astral);
+  var spellIndex = cpu.skyWindow.indexOf(bestCombo.spell);
 
-  return false;
-}
+  if (astralIndex < 0 || spellIndex < 0) return false;
 
-/**
- * 最適な攻撃コンボを選択
- */
-function selectBestAttackCombo(cpu, spells, opponent) {
-  var bestScore = -1;
-  var bestCombo = null;
-
-  for (var i = 0; i < cpu.field.length; i++) {
-    var astral = cpu.field[i];
-
-    for (var j = 0; j < spells.length; j++) {
-      var spell = spells[j];
-
-      // 過詠量の決定
-      var maxOC = getMaxOvercharge(spell.cost);
-      var availableOC = cpu.sp - spell.cost; // 使えるSPの余剰
-      var overcharge = Math.min(maxOC, Math.max(0, availableOC));
-      // SPが余裕ない場合は過詠しない
-      if (cpu.sp - spell.cost - overcharge < 0) overcharge = 0;
-
-      var atkPower = calcAttackPower(astral, spell, overcharge);
-
-      // スコア計算
-      var score = atkPower;
-      // 共鳴ボーナスがあればスコアUP
-      if (hasResonance(astral, spell)) score += 2;
-
-      // 相手の防御を予測（最小防御力）
-      var minDefPower = 0;
-      if (opponent.field.length > 0) {
-        minDefPower = opponent.field[0].power;
-      }
-
-      // 勝てる見込みがある場合のみ
-      if (atkPower > minDefPower && score > bestScore) {
-        bestScore = score;
-        bestCombo = {
-          astral: astral,
-          spell: spell,
-          overcharge: overcharge
-        };
-      }
-    }
-  }
-
-  return bestCombo;
+  playerStarStrike(state, astralIndex);
+  return playerSelectAttackSpell(state, spellIndex, bestCombo.overcharge);
 }
 
 // =============================================
@@ -220,43 +470,44 @@ function selectBestAttackCombo(cpu, spells, opponent) {
 // =============================================
 
 /**
+ * CPUの防御リアクションを決定
+ * @returns {{type:string, spellIndex:number, overcharge:number}|{type:string}}
+ */
+function cpuDefenseReaction(state, attackPower) {
+  var battle = state.currentBattle;
+  if (!battle || !battle.defenseAstral) {
+    return { type: 'pass' };
+  }
+
+  var preview = buildCpuDefensePreview(battle.defender, attackPower);
+
+  if (!preview.canBlock || !preview.spell) {
+    return { type: 'pass' };
+  }
+
+  return {
+    type: 'defend',
+    spellIndex: battle.defender.skyWindow.indexOf(preview.spell),
+    overcharge: preview.overcharge
+  };
+}
+
+/**
  * CPUの防御リアクション（プレイヤーの攻撃に対して）
  */
 function cpuDefendAction(state) {
   var battle = state.currentBattle;
-  var cpu = battle.defender;
+  if (!battle) return;
 
-  setTimeout(function() {
-    // 使用可能な守星術を確認
-    var defSpells = getAvailableDefenseSpells(cpu.skyWindow, cpu.sp);
+  scheduleStateTask(state, function() {
+    var attackPower = calcAttackPower(battle.attackAstral, battle.attackSpell, battle.overcharge);
+    var decision = cpuDefenseReaction(state, attackPower);
 
-    if (defSpells.length > 0 && battle.defenseAstral) {
-      // 最も効果的な守星術を選択
-      var bestSpell = null;
-      var bestDefPower = 0;
-
-      for (var i = 0; i < defSpells.length; i++) {
-        var spell = defSpells[i];
-        var defPower = calcDefensePower(battle.defenseAstral, spell, 0);
-
-        // 攻撃を防げるか判断
-        var atkPower = calcAttackPower(battle.attackAstral, battle.attackSpell, battle.overcharge);
-
-        if (defPower >= atkPower && defPower > bestDefPower) {
-          bestDefPower = defPower;
-          bestSpell = spell;
-        }
-      }
-
-      if (bestSpell) {
-        // 守星術を使用
-        var spellIdx = cpu.skyWindow.indexOf(bestSpell);
-        playerDefend(state, spellIdx, 0);
-        return;
-      }
+    if (decision.type === 'defend' && decision.spellIndex >= 0) {
+      playerDefend(state, decision.spellIndex, decision.overcharge);
+      return;
     }
 
-    // 防御不可 → パス
     playerDefend(state, -1, 0);
   }, 600);
 }
@@ -266,39 +517,63 @@ function cpuDefendAction(state) {
 // =============================================
 
 /**
+ * CPUの星護判断を決定
+ * @returns {{type:string, astralIndex:number}|{type:string}}
+ */
+function cpuGuardDecision(state, damage) {
+  var battle = state.currentBattle;
+  if (!battle) {
+    return { type: 'chronicle' };
+  }
+
+  var cpu = battle.defender;
+  var remaining = getRemainingPages(cpu);
+  var guardIndex = selectCpuGuardAstralIndex(cpu);
+
+  if (guardIndex < 0) {
+    return { type: 'chronicle' };
+  }
+
+  var guardAstral = cpu.field[guardIndex];
+  var lethalChronicle = remaining <= damage;
+  var shouldPreserveField = guardAstral.state === 'eclipse' &&
+    cpu.field.length === 1 &&
+    !hasRemainingAstralSource(cpu);
+
+  if (lethalChronicle) {
+    return { type: 'guard', astralIndex: guardIndex };
+  }
+
+  if (remaining <= damage + 2 && guardAstral.state === 'radiant') {
+    return { type: 'guard', astralIndex: guardIndex };
+  }
+
+  if (remaining <= 4 && guardAstral.state === 'radiant') {
+    return { type: 'guard', astralIndex: guardIndex };
+  }
+
+  if (guardAstral.state === 'eclipse' && shouldPreserveField) {
+    return { type: 'chronicle' };
+  }
+
+  return { type: 'chronicle' };
+}
+
+/**
  * CPUのダメージ選択（星典 or 星護）
  */
 function cpuDamageChoice(state) {
   var battle = state.currentBattle;
-  var cpu = battle.defender;
-  var damage = battle.clashResult.totalDamage;
+  if (!battle || !battle.clashResult) return;
 
-  setTimeout(function() {
-    var remaining = getRemainingPages(cpu);
+  scheduleStateTask(state, function() {
+    var decision = cpuGuardDecision(state, battle.clashResult.totalDamage);
 
-    // 判断: 残りページが少なければ星護、多ければ星典で受ける
-    if (remaining <= damage + 3 && cpu.field.length > 0) {
-      // 星護を選択
-      // 輝態の星霊を優先（蝕態だと消星するので）
-      var guardIdx = -1;
-      for (var i = 0; i < cpu.field.length; i++) {
-        if (cpu.field[i].state === 'radiant') {
-          guardIdx = i;
-          break;
-        }
-      }
-      // 輝態がなければ蝕態でも星護
-      if (guardIdx === -1 && cpu.field.length > 0) {
-        guardIdx = 0;
-      }
-
-      if (guardIdx >= 0) {
-        playerGuard(state, guardIdx);
-        return;
-      }
+    if (decision.type === 'guard' && decision.astralIndex >= 0) {
+      playerGuard(state, decision.astralIndex);
+      return;
     }
 
-    // 星典で受ける
     playerTakeChronicleDamage(state);
   }, 600);
 }

@@ -1,0 +1,23 @@
+{
+  "browser": "chromium",
+  "launched": true,
+  "errors": [],
+  "responseVisible": true,
+  "phase5Passed": true,
+  "phase5Summary": {
+    "halfTurns": 20,
+    "stalled": false,
+    "winner": "player",
+    "gameOver": true,
+    "finalTurn": 10,
+    "remainingPages": {
+      "player": 2,
+      "cpu": 0
+    },
+    "clashCount": 7,
+    "guardCount": 10,
+    "fateCount": 2,
+    "overchargeCount": 14,
+    "autoReadCount": 20
+  }
+}

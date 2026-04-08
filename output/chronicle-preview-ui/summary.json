@@ -1,0 +1,63 @@
+{
+  "openState": {
+    "previewOpen": true,
+    "selectedPage": 1,
+    "focusTitle": "⚔️ 火炎星（かえんせい）",
+    "summaryChips": [],
+    "pageCount": 20
+  },
+  "selectedState": {
+    "selectedPage": 5,
+    "focusPage": "Page 6",
+    "focusTitle": "⚔️ 震撃星（しんげきせい）",
+    "focusMeta": [
+      "未来ページ",
+      "攻星術",
+      "地"
+    ],
+    "focusDetails": [
+      "コスト: 2 SP",
+      "星力上昇: +2",
+      "ダメージ: 2"
+    ],
+    "focusEffect": "自分のバトルで使用する攻星術。",
+    "renderText": {
+      "id": "player",
+      "sp": 2,
+      "chronicleIndex": 2,
+      "remainingPages": 18,
+      "usedFate": false,
+      "skyWindow": [
+        {
+          "id": "spell_atk_001",
+          "name": "火炎星（かえんせい）",
+          "type": "spell",
+          "timing": "attack",
+          "element": "fire",
+          "cost": 2,
+          "power": null,
+          "powerBoost": 2,
+          "damage": 2,
+          "pageIndex": 1
+        }
+      ],
+      "field": [
+        {
+          "id": "astral_001",
+          "name": "火狐（カコ）",
+          "element": "fire",
+          "power": 2,
+          "tempPowerBoost": 0,
+          "state": "radiant"
+        }
+      ],
+      "usedCardIndices": [
+        0
+      ],
+      "readPageIndices": [
+        1
+      ]
+    }
+  },
+  "errors": []
+}

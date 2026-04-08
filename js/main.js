@@ -11,6 +11,25 @@
  * ゲーム開始
  */
 function startGame() {
+  if (typeof resetUiState === 'function') {
+    resetUiState();
+  }
+
   var state = initGame();
-  renderGameState(state);
+  syncGameState(state);
+}
+
+if (typeof window !== 'undefined') {
+  window.render_game_to_text = function() {
+    return renderGameToText(gameState);
+  };
+
+  window.advanceTime = function() {
+    syncGameState(gameState);
+    return window.render_game_to_text();
+  };
+
+  window.runPhase2Simulation = runPhase2Simulation;
+  window.runPhase4Simulation = runPhase4Simulation;
+  window.runPhase5Simulation = runPhase5Simulation;
 }

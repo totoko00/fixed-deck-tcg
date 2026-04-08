@@ -18,7 +18,13 @@
  * 上限 = 通常コストの2倍
  */
 function getMaxOvercharge(spellCost) {
-  return spellCost * 2;
+  return Math.max(0, spellCost);
+}
+
+function clampOvercharge(extraSP, spellCost, availableExtraSP) {
+  var requested = Math.max(0, extraSP || 0);
+  var maxAllowed = Math.min(getMaxOvercharge(spellCost), Math.max(0, availableExtraSP || 0));
+  return Math.min(requested, maxAllowed);
 }
 
 /**
@@ -50,8 +56,7 @@ function calcAttackPower(astral, spell, overcharge) {
   var base = astral.power + (astral.tempPowerBoost || 0);
   var spellPower = spell.powerBoost;
   var resonance = getResonanceBonus(astral, spell);
-  var ocBonus = calcOverchargePowerBonus(overcharge || 0);
-  return base + spellPower + resonance + ocBonus;
+  return base + spellPower + resonance;
 }
 
 /**
@@ -97,14 +102,8 @@ function calcTotalDamage(spell, overcharge) {
  * @returns {number} 実際にめくれたページ数
  */
 function applyChronicleDamage(player, damage) {
-  var actualDamage = 0;
-  for (var i = 0; i < damage; i++) {
-    if (canRead(player)) {
-      player.chronicleIndex++;
-      actualDamage++;
-    }
-  }
-  updateSkyWindow(player);
+  var actualDamage = Math.min(Math.max(0, damage), getRemainingPages(player));
+  player.chronicleIndex += actualDamage;
   return actualDamage;
 }
 
@@ -118,11 +117,14 @@ function applyChronicleDamage(player, damage) {
  * 蝕態 → 消星（'vanish'を返す）
  */
 function guardWithAstral(astral) {
+  if (!astral) return null;
+
   if (astral.state === 'radiant') {
     astral.state = 'eclipse';
     return 'eclipse';
   } else {
     // 蝕態の星霊が星護 → 消星
+    astral.state = 'vanish';
     return 'vanish';
   }
 }

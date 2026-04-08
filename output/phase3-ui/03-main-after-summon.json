@@ -1,0 +1,106 @@
+{
+  "turn": 1,
+  "activePlayer": "player",
+  "phase": "main",
+  "readCount": 2,
+  "isGameOver": false,
+  "winner": null,
+  "player": {
+    "id": "player",
+    "sp": 4,
+    "chronicleIndex": 4,
+    "remainingPages": 16,
+    "usedFate": false,
+    "skyWindow": [
+      {
+        "id": "spell_def_001",
+        "name": "水鏡盾（すいきょうじゅん）",
+        "type": "spell",
+        "timing": "defense",
+        "element": "water",
+        "cost": 1,
+        "power": null,
+        "powerBoost": 2,
+        "damage": 0,
+        "pageIndex": 2
+      }
+    ],
+    "field": [
+      {
+        "id": "astral_001",
+        "name": "火狐（カコ）",
+        "element": "fire",
+        "power": 2,
+        "tempPowerBoost": 0,
+        "state": "radiant"
+      },
+      {
+        "id": "astral_002",
+        "name": "蒼騎士（アズナイト）",
+        "element": "water",
+        "power": 4,
+        "tempPowerBoost": 0,
+        "state": "radiant"
+      }
+    ],
+    "usedCardIndices": [
+      0,
+      3
+    ],
+    "readPageIndices": [
+      1,
+      2,
+      3
+    ]
+  },
+  "cpu": {
+    "id": "cpu",
+    "sp": 2,
+    "chronicleIndex": 2,
+    "remainingPages": 18,
+    "usedFate": false,
+    "skyWindow": [
+      {
+        "id": "spell_def_003",
+        "name": "岩盤陣（がんばんじん）",
+        "type": "spell",
+        "timing": "defense",
+        "element": "earth",
+        "cost": 3,
+        "power": null,
+        "powerBoost": 6,
+        "damage": 0,
+        "pageIndex": 1
+      }
+    ],
+    "field": [
+      {
+        "id": "astral_004",
+        "name": "岩守（ガンシュ）",
+        "element": "earth",
+        "power": 3,
+        "tempPowerBoost": 0,
+        "state": "radiant"
+      }
+    ],
+    "usedCardIndices": [
+      0
+    ],
+    "readPageIndices": [
+      1
+    ]
+  },
+  "currentBattle": null,
+  "logTail": [
+    "⭐ プレイヤー が 火狐（カコ） を召喚！（星力:2 火属性）",
+    "⭐ CPU が 岩守（ガンシュ） を召喚！（星力:3 地属性）",
+    "📖 プレイヤー が星典を1ページ詠んだ（SP+2）",
+    "📖 CPU が星典を1ページ詠んだ（SP+2）",
+    "═══ ターン1: プレイヤーのターン ═══",
+    "── スタートフェイズ ──",
+    "📖 プレイヤー が星典を1ページ詠んだ（SP+2）",
+    "📖 プレイヤー が星典を1ページ詠んだ（SP+2）",
+    "── メインフェイズ ──",
+    "⭐ プレイヤー が 蒼騎士（アズナイト） を召喚！（星力:4 水属性）"
+  ]
+}

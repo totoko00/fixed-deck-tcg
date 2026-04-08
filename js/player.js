@@ -23,7 +23,8 @@ function createPlayer(id, chroniclePages) {
     skyWindow: [],            // 現在の天窓カード
     field: [],                // フィールド上の星霊
     usedFate: false,          // このターン星命を使用したか
-    usedCardIndices: []       // 使用済みカードのページインデックス
+    usedCardIndices: [],      // 使用済みカードのページインデックス
+    readPageIndices: []       // 実際に詠んだページ履歴（ダメージめくりは含めない）
   };
 }
 
@@ -34,9 +35,12 @@ function createPlayer(id, chroniclePages) {
 function readPage(player) {
   if (!canRead(player)) return null;
 
-  var card = player.chroniclePages[player.chronicleIndex];
-  player.chronicleIndex++;
-  player.sp += SP_PER_PAGE;
+  var pageIndex = player.chronicleIndex;
+  var card = player.chroniclePages[pageIndex];
+
+  player.chronicleIndex = pageIndex + 1;
+  player.readPageIndices.push(pageIndex);
+  addSP(player, SP_PER_PAGE);
 
   // 天窓を更新
   updateSkyWindow(player);
@@ -48,14 +52,14 @@ function readPage(player) {
  * 詠めるかどうか判定
  */
 function canRead(player) {
-  return player.chronicleIndex < player.chroniclePages.length;
+  return player.chronicleIndex >= 0 && player.chronicleIndex < player.chroniclePages.length;
 }
 
 /**
  * 残りページ数を取得
  */
 function getRemainingPages(player) {
-  return player.chroniclePages.length - player.chronicleIndex;
+  return Math.max(0, player.chroniclePages.length - player.chronicleIndex);
 }
 
 /**
@@ -65,20 +69,20 @@ function getRemainingPages(player) {
 function updateSkyWindow(player) {
   player.skyWindow = [];
 
-  // 直近2ページ分のインデックスを算出
-  // chronicleIndex は「次に詠むページ」なので、
-  // 直近2ページは chronicleIndex-2 と chronicleIndex-1
-  var startIdx = Math.max(0, player.chronicleIndex - 2);
-  var endIdx = player.chronicleIndex; // exclusive
+  // 天窓は「実際に詠んだ直近2ページ」から作る。
+  // ダメージでめくれたページは含めない。
+  var startIdx = Math.max(0, player.readPageIndices.length - 2);
 
-  for (var i = startIdx; i < endIdx; i++) {
-    // 使用済みでないカードのみ天窓に表示
-    if (player.usedCardIndices.indexOf(i) === -1) {
-      var card = player.chroniclePages[i];
-      // 天窓用の情報を付加
-      card._pageIndex = i; // 元のページインデックス
-      player.skyWindow.push(card);
-    }
+  for (var i = startIdx; i < player.readPageIndices.length; i++) {
+    var pageIndex = player.readPageIndices[i];
+
+    if (player.usedCardIndices.indexOf(pageIndex) !== -1) continue;
+
+    var card = player.chroniclePages[pageIndex];
+    if (!card) continue;
+
+    card._pageIndex = pageIndex;
+    player.skyWindow.push(card);
   }
 }
 
@@ -94,6 +98,7 @@ function getSkyWindow(player) {
  * @returns {boolean} 消費成功ならtrue
  */
 function spendSP(player, cost) {
+  if (cost < 0) return false;
   if (player.sp < cost) return false;
   player.sp -= cost;
   return true;
@@ -103,6 +108,7 @@ function spendSP(player, cost) {
  * SP追加
  */
 function addSP(player, amount) {
+  if (amount <= 0) return;
   player.sp += amount;
 }
 
@@ -114,6 +120,10 @@ function summonAstral(player, card, pageIndex) {
   if (player.field.length >= MAX_FIELD_ASTRALS) return false;
   if (card.type !== 'astral') return false;
 
+  if (pageIndex === undefined && card._pageIndex !== undefined) {
+    pageIndex = card._pageIndex;
+  }
+
   // カードを複製してフィールドに追加
   var fieldCard = cloneCard(card);
   fieldCard.state = 'radiant'; // 輝態で召喚
@@ -121,7 +131,7 @@ function summonAstral(player, card, pageIndex) {
   player.field.push(fieldCard);
 
   // 使用済みに追加
-  if (pageIndex !== undefined) {
+  if (pageIndex !== undefined && player.usedCardIndices.indexOf(pageIndex) === -1) {
     player.usedCardIndices.push(pageIndex);
     updateSkyWindow(player);
   }
@@ -142,7 +152,53 @@ function removeAstral(player, index) {
  * 星霊を蝕態にする
  */
 function eclipseAstral(astral) {
+  if (!astral || astral.state !== 'radiant') return false;
   astral.state = 'eclipse';
+  return true;
+}
+
+function trimReadHistory(player) {
+  var nextHistory = [];
+
+  for (var i = 0; i < player.readPageIndices.length; i++) {
+    if (player.readPageIndices[i] < player.chronicleIndex) {
+      nextHistory.push(player.readPageIndices[i]);
+    }
+  }
+
+  player.readPageIndices = nextHistory;
+}
+
+function restoreChroniclePages(player, amount) {
+  if (amount <= 0) return 0;
+
+  var nextIndex = Math.max(0, player.chronicleIndex - amount);
+  var restored = player.chronicleIndex - nextIndex;
+
+  player.chronicleIndex = nextIndex;
+  trimReadHistory(player);
+  updateSkyWindow(player);
+
+  return restored;
+}
+
+function hasRemainingAstralSource(player) {
+  var i;
+
+  for (i = 0; i < player.skyWindow.length; i++) {
+    if (player.skyWindow[i].type === 'astral') {
+      return true;
+    }
+  }
+
+  for (i = player.chronicleIndex; i < player.chroniclePages.length; i++) {
+    if (player.usedCardIndices.indexOf(i) !== -1) continue;
+    if (player.chroniclePages[i].type === 'astral') {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -155,15 +211,8 @@ function isDefeated(player) {
   if (getRemainingPages(player) <= 0) return true;
 
   // 星霊全滅（場に星霊なし かつ 残り星典に星霊カードなし）
-  if (player.field.length === 0) {
-    var hasAstralInChronicle = false;
-    for (var i = player.chronicleIndex; i < player.chroniclePages.length; i++) {
-      if (player.chroniclePages[i].type === 'astral') {
-        hasAstralInChronicle = true;
-        break;
-      }
-    }
-    if (!hasAstralInChronicle) return true;
+  if (player.field.length === 0 && !hasRemainingAstralSource(player)) {
+    return true;
   }
 
   return false;
@@ -191,8 +240,7 @@ function applyFateEffect(player, fateCard, pageIndex) {
   switch (fateCard.effectType) {
     case 'chronicle_restore':
       // 星典の詠み位置を戻す（最小0）
-      player.chronicleIndex = Math.max(0, player.chronicleIndex - fateCard.value);
-      updateSkyWindow(player);
+      restoreChroniclePages(player, fateCard.value);
       break;
 
     case 'power_buff':
@@ -212,7 +260,7 @@ function applyFateEffect(player, fateCard, pageIndex) {
   player.usedFate = true;
 
   // 使用済みに追加
-  if (pageIndex !== undefined) {
+  if (pageIndex !== undefined && player.usedCardIndices.indexOf(pageIndex) === -1) {
     player.usedCardIndices.push(pageIndex);
     updateSkyWindow(player);
   }

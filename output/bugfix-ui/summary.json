@@ -1,0 +1,31 @@
+{
+  "lockedState": {
+    "starStrikeResult": false,
+    "currentBattle": null,
+    "controlText": "フェイズ: バトルフェイズ\n使える攻星術がないため、このターンは攻撃できません\nバトルをスキップしてエンドフェイズへ進めます。\n⏩ バトルスキップ",
+    "fieldHints": [
+      "攻星術なし"
+    ],
+    "logTail": [
+      "═══ ターン1: プレイヤーのターン ═══",
+      "── スタートフェイズ ──",
+      "⚠️ 使用可能な攻星術がないため星撃宣言できない"
+    ]
+  },
+  "cancelStateBefore": {
+    "battlePhase": "selectSpell",
+    "cancelExists": true
+  },
+  "cancelStateAfter": {
+    "currentBattle": null,
+    "phase": "battle",
+    "controlText": "フェイズ: バトルフェイズ\nフィールドの星霊をクリックして星撃宣言\n攻撃しないならバトルをスキップしてターンを畳めます。\n⏩ バトルスキップ",
+    "logTail": [
+      "⚠️ 使用可能な攻星術がないため星撃宣言できない",
+      "⚔️ プレイヤー が 火狐（カコ） で星撃宣言！",
+      "↩️ プレイヤー は星撃宣言を取り消した"
+    ],
+    "phase2Passed": true
+  },
+  "errors": []
+}

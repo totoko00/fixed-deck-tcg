@@ -1,0 +1,154 @@
+{
+  "turn": 10,
+  "activePlayer": "cpu",
+  "phase": "end",
+  "readCount": 0,
+  "isGameOver": true,
+  "winner": "player",
+  "player": {
+    "id": "player",
+    "sp": 3,
+    "chronicleIndex": 18,
+    "remainingPages": 2,
+    "usedFate": false,
+    "skyWindow": [
+      {
+        "id": "spell_def_002",
+        "name": "風障壁（ふうしょうへき）",
+        "type": "spell",
+        "timing": "defense",
+        "element": "wind",
+        "cost": 2,
+        "power": null,
+        "powerBoost": 4,
+        "damage": 0,
+        "pageIndex": 17
+      }
+    ],
+    "field": [
+      {
+        "id": "astral_001",
+        "name": "火狐（カコ）",
+        "element": "fire",
+        "power": 2,
+        "tempPowerBoost": 0,
+        "state": "eclipse"
+      },
+      {
+        "id": "astral_002",
+        "name": "蒼騎士（アズナイト）",
+        "element": "water",
+        "power": 4,
+        "tempPowerBoost": 0,
+        "state": "eclipse"
+      },
+      {
+        "id": "astral_005",
+        "name": "煌竜（コウリュウ）",
+        "element": "fire",
+        "power": 7,
+        "tempPowerBoost": 0,
+        "state": "radiant"
+      }
+    ],
+    "usedCardIndices": [
+      0,
+      3,
+      8,
+      13,
+      14,
+      15,
+      16
+    ],
+    "readPageIndices": [
+      1,
+      2,
+      3,
+      4,
+      8,
+      9,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17
+    ]
+  },
+  "cpu": {
+    "id": "cpu",
+    "sp": 8,
+    "chronicleIndex": 20,
+    "remainingPages": 0,
+    "usedFate": false,
+    "skyWindow": [
+      {
+        "id": "fate_003",
+        "name": "星力充填",
+        "type": "fate",
+        "timing": null,
+        "element": null,
+        "cost": 1,
+        "power": null,
+        "powerBoost": 0,
+        "damage": 0,
+        "pageIndex": 19
+      }
+    ],
+    "field": [
+      {
+        "id": "astral_004",
+        "name": "岩守（ガンシュ）",
+        "element": "earth",
+        "power": 3,
+        "tempPowerBoost": 0,
+        "state": "eclipse"
+      },
+      {
+        "id": "astral_002",
+        "name": "蒼騎士（アズナイト）",
+        "element": "water",
+        "power": 4,
+        "tempPowerBoost": 0,
+        "state": "radiant"
+      }
+    ],
+    "usedCardIndices": [
+      0,
+      3,
+      2,
+      7,
+      14,
+      13,
+      18
+    ],
+    "readPageIndices": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      11,
+      12,
+      13,
+      17,
+      18,
+      19
+    ]
+  },
+  "currentBattle": null,
+  "logTail": [
+    "⚔️ CPU が攻星術「氷瀑星（ひょうばくせい）」を使用！",
+    "🔥 CPU が過詠！ 追加SP:2",
+    "✨ 共鳴発動！ 蒼騎士（アズナイト） × 氷瀑星（ひょうばくせい） （星力+1）",
+    "🚫 プレイヤー は守星術を使用しなかった",
+    "⚔️ 星力衝突！ CPU(星力:8)✨共鳴🔥過詠+2 vs プレイヤー(星力:0) → 攻撃成功！",
+    "💥 ダメージ:4 — 星典で受けるか、星霊で星護するか？",
+    "🛡️ 蒼騎士（アズナイト） が星護！ 輝態 → 蝕態",
+    "── エンドフェイズ ──",
+    "📖 CPU が星典を1ページ詠んだ（SP+2）（自動）",
+    "🏆 プレイヤー の勝利！（星典消滅）"
+  ]
+}

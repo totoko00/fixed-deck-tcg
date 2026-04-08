@@ -1,0 +1,82 @@
+/* ========================================
+   星典戦記 — 基本スタイル
+   ======================================== */
+
+/* --- リセット --- */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* --- 基本 --- */
+body {
+  font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  background: #0a0a1a;
+  color: #e0e0e0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#game-container {
+  width: 100%;
+  max-width: 960px;
+  min-height: 100vh;
+  position: relative;
+}
+
+/* --- タイトル画面 --- */
+#title-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  text-align: center;
+}
+
+#title-screen h1 {
+  font-size: 3rem;
+  color: #f0d060;
+  text-shadow: 0 0 20px rgba(240, 208, 96, 0.5);
+  letter-spacing: 0.3em;
+}
+
+#title-screen .subtitle {
+  font-size: 1rem;
+  color: #8888aa;
+  margin-top: 0.5rem;
+  letter-spacing: 0.2em;
+}
+
+#btn-start {
+  margin-top: 3rem;
+  padding: 1rem 3rem;
+  font-size: 1.2rem;
+  background: linear-gradient(135deg, #2a1a4a, #3a2a6a);
+  color: #f0d060;
+  border: 1px solid #f0d06044;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  letter-spacing: 0.1em;
+}
+
+#btn-start:hover {
+  background: linear-gradient(135deg, #3a2a6a, #5a3a9a);
+  box-shadow: 0 0 20px rgba(240, 208, 96, 0.3);
+  transform: translateY(-2px);
+}
+
+/* --- 属性カラー --- */
+.element-fire { color: #ff6b4a; }
+.element-water { color: #4a9bff; }
+.element-wind { color: #4aff8b; }
+.element-earth { color: #c8a64a; }
+
+.bg-fire { background-color: rgba(255, 107, 74, 0.15); border-color: #ff6b4a; }
+.bg-water { background-color: rgba(74, 155, 255, 0.15); border-color: #4a9bff; }
+.bg-wind { background-color: rgba(74, 255, 139, 0.15); border-color: #4aff8b; }
+.bg-earth { background-color: rgba(200, 166, 74, 0.15); border-color: #c8a64a; }

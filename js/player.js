@@ -12,14 +12,20 @@ var MAX_READ_PER_TURN = 3; // スタートフェイズの最大詠み回数
  * プレイヤーオブジェクトを生成
  * @param {string} id - 'player' | 'cpu'
  * @param {Card[]} chroniclePages - 星典の全ページ（20枚）
+ * @param {Object} metadata - 星典メタ情報
  * @returns {Player}
  */
-function createPlayer(id, chroniclePages) {
+function createPlayer(id, chroniclePages, metadata) {
+  var meta = metadata || {};
+
   return {
     id: id,
     sp: 0,
     chronicleIndex: 0,       // 次に詠むページのインデックス（0始まり）
     chroniclePages: chroniclePages,
+    presetId: meta.presetId || null,
+    presetName: meta.presetName || null,
+    presetArchetype: meta.presetArchetype || null,
     skyWindow: [],            // 現在の天窓カード
     field: [],                // フィールド上の星霊
     usedFate: false,          // このターン星命を使用したか
@@ -229,32 +235,123 @@ function resetTurnState(player) {
   }
 }
 
-/**
- * 星命カードの効果を適用
- * @returns {boolean} 使用成功ならtrue
- */
-function applyFateEffect(player, fateCard, pageIndex) {
-  if (player.usedFate) return false; // 1ターン1枚制限
-  if (!spendSP(player, fateCard.cost)) return false;
+function getFateEffectPayload(fateCard) {
+  if (!fateCard || fateCard.type !== 'fate') return {};
+  return fateCard.effectPayload || {};
+}
+
+function getFateEffectAmount(fateCard) {
+  var payload = getFateEffectPayload(fateCard);
+
+  if (typeof payload.amount === 'number') return payload.amount;
+  if (typeof payload.pages === 'number') return payload.pages;
+  return 0;
+}
+
+function selectFateBuffTargetIndex(player, fateCard) {
+  var payload = getFateEffectPayload(fateCard);
+  var targetMode = payload.targetMode || 'strongest';
+  var bestIndex = -1;
+  var bestScore = -Infinity;
+  var i;
+  var astral;
+  var score;
+
+  if (!player || player.field.length === 0) return -1;
+  if (targetMode === 'first') return 0;
+
+  for (i = 0; i < player.field.length; i++) {
+    astral = player.field[i];
+    score = astral.power + (astral.tempPowerBoost || 0);
+
+    if (astral.state === 'radiant') {
+      score += 2;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+
+  return bestIndex;
+}
+
+function canResolveFateEffect(player, fateCard) {
+  var payload = getFateEffectPayload(fateCard);
+
+  if (!player || !fateCard) return false;
 
   switch (fateCard.effectType) {
     case 'chronicle_restore':
-      // 星典の詠み位置を戻す（最小0）
-      restoreChroniclePages(player, fateCard.value);
+      return player.chronicleIndex > 0 && (payload.pages || 0) > 0;
+    case 'power_buff':
+      return player.field.length > 0 && (payload.amount || 0) > 0;
+    case 'sp_charge':
+      return (payload.amount || 0) > 0;
+  }
+
+  return false;
+}
+
+function resolveFateEffect(player, fateCard, options) {
+  var payload = getFateEffectPayload(fateCard);
+  var result = {
+    success: false,
+    effectType: fateCard.effectType,
+    amount: 0,
+    targetIndex: -1,
+    targetName: null
+  };
+
+  if (!player || !fateCard) return result;
+  if (!canResolveFateEffect(player, fateCard)) return result;
+
+  switch (fateCard.effectType) {
+    case 'chronicle_restore':
+      result.amount = restoreChroniclePages(player, payload.pages || 0);
+      result.success = result.amount > 0;
       break;
 
     case 'power_buff':
-      // 場の星霊1体の星力+N（ターン終了まで）
-      // MVPでは最初の星霊に適用
-      if (player.field.length > 0) {
-        player.field[0].tempPowerBoost += fateCard.value;
+      result.targetIndex = options && typeof options.targetIndex === 'number' ?
+        options.targetIndex :
+        selectFateBuffTargetIndex(player, fateCard);
+
+      if (result.targetIndex >= 0 && result.targetIndex < player.field.length) {
+        player.field[result.targetIndex].tempPowerBoost += payload.amount || 0;
+        result.amount = payload.amount || 0;
+        result.targetName = player.field[result.targetIndex].name;
+        result.success = true;
       }
       break;
 
     case 'sp_charge':
-      // SP+N
-      addSP(player, fateCard.value);
+      result.amount = payload.amount || 0;
+      if (result.amount > 0) {
+        addSP(player, result.amount);
+        result.success = true;
+      }
       break;
+  }
+
+  return result;
+}
+
+/**
+ * 星命カードの効果を適用
+ * @returns {boolean} 使用成功ならtrue
+ */
+function applyFateEffect(player, fateCard, pageIndex, options) {
+  var result;
+
+  if (player.usedFate) return false; // 1ターン1枚制限
+  if (!spendSP(player, fateCard.cost)) return false;
+
+  result = resolveFateEffect(player, fateCard, options);
+  if (!result.success) {
+    addSP(player, fateCard.cost);
+    return false;
   }
 
   player.usedFate = true;

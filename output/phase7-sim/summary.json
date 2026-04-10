@@ -1,0 +1,52 @@
+{
+  "phase2": {
+    "passed": true
+  },
+  "phase4": {
+    "passed": true
+  },
+  "phase5": {
+    "passed": true,
+    "summary": {
+      "halfTurns": 18,
+      "stalled": false,
+      "winner": "player",
+      "gameOver": true,
+      "finalTurn": 9,
+      "setup": {
+        "playerPresetId": "balance_standard",
+        "cpuPresetId": "tide_bulwark"
+      },
+      "remainingPages": {
+        "player": 1,
+        "cpu": 0
+      },
+      "clashCount": 5,
+      "guardCount": 6,
+      "fateCount": 5,
+      "overchargeCount": 10,
+      "autoReadCount": 18
+    }
+  },
+  "phase7": {
+    "passed": true,
+    "balance": {
+      "balance_standard": {
+        "wins": 3,
+        "games": 6,
+        "winRate": 0.5
+      },
+      "blaze_rush": {
+        "wins": 3,
+        "games": 6,
+        "winRate": 0.5
+      },
+      "tide_bulwark": {
+        "wins": 3,
+        "games": 6,
+        "winRate": 0.5
+      }
+    },
+    "failedChecks": []
+  }
+}

@@ -5,17 +5,25 @@
 var uiState = null;
 resetUiState();
 
-function createUiState() {
+function createDefaultSetupSelection(options) {
+  return {
+    playerPresetId: options && options.playerPresetId ? options.playerPresetId : DEFAULT_PLAYER_CHRONICLE_PRESET_ID,
+    cpuPresetId: options && options.cpuPresetId ? options.cpuPresetId : DEFAULT_CPU_CHRONICLE_PRESET_ID
+  };
+}
+
+function createUiState(options) {
   return {
     chroniclePreviewOpen: false,
     selectedChroniclePage: null,
     utilityPanel: 'log',
-    pendingOvercharge: null
+    pendingOvercharge: null,
+    setupSelection: createDefaultSetupSelection(options)
   };
 }
 
-function resetUiState() {
-  uiState = createUiState();
+function resetUiState(options) {
+  uiState = createUiState(options);
 
   if (typeof window !== 'undefined') {
     window.uiState = uiState;
@@ -26,6 +34,114 @@ function ensureUiState() {
   if (!uiState) {
     resetUiState();
   }
+}
+
+function getSetupSelection() {
+  ensureUiState();
+  return cloneValue(uiState.setupSelection || createDefaultSetupSelection());
+}
+
+function updateSetupPreset(role, presetId) {
+  ensureUiState();
+
+  if (!getChroniclePreset(presetId)) return;
+  if (role !== 'player' && role !== 'cpu') return;
+
+  uiState.setupSelection[role + 'PresetId'] = presetId;
+
+  if (!gameState) {
+    renderTitleScreen();
+  }
+}
+
+function renderPresetSummaryHTML(role, presetId) {
+  var summary = summarizeChroniclePreset(presetId);
+  var preset = getChroniclePreset(presetId);
+  var chips = [];
+  var dominantElements = [];
+  var elementKeys = ['fire', 'water', 'wind', 'earth'];
+  var i;
+
+  if (!summary || !preset) return '';
+
+  for (i = 0; i < elementKeys.length; i++) {
+    if (summary.elementCounts[elementKeys[i]] > 0) {
+      dominantElements.push(ELEMENT_NAMES[elementKeys[i]] + ' ' + summary.elementCounts[elementKeys[i]]);
+    }
+  }
+
+  chips.push('星霊 ' + summary.typeCounts.astral);
+  chips.push('攻星術 ' + summary.typeCounts.attack);
+  chips.push('守星術 ' + summary.typeCounts.defense);
+  chips.push('星命 ' + summary.typeCounts.fate);
+  chips.push('平均コスト ' + summary.averageCost);
+
+  return '<div class="setup-summary-card">' +
+    '<div class="setup-summary-role">' + (role === 'player' ? 'プレイヤー星典' : 'CPU星典') + '</div>' +
+    '<div class="setup-summary-name">' + preset.name + '</div>' +
+    '<div class="setup-summary-archetype">' + preset.archetype + '</div>' +
+    '<div class="setup-summary-description">' + preset.description + '</div>' +
+    '<div class="setup-summary-chips">' + chips.map(function(chip) {
+      return '<span class="setup-chip">' + chip + '</span>';
+    }).join('') + '</div>' +
+    '<div class="setup-summary-elements">' + dominantElements.join(' / ') + '</div>' +
+  '</div>';
+}
+
+function renderTitleScreenHTML() {
+  ensureUiState();
+
+  var presets = listChroniclePresets();
+  var setup = getSetupSelection();
+  var playerOptions = '';
+  var cpuOptions = '';
+  var i;
+  var preset;
+
+  for (i = 0; i < presets.length; i++) {
+    preset = presets[i];
+    playerOptions += '<option value="' + preset.id + '"' +
+      (preset.id === setup.playerPresetId ? ' selected' : '') + '>' +
+      preset.name + ' / ' + preset.archetype +
+    '</option>';
+    cpuOptions += '<option value="' + preset.id + '"' +
+      (preset.id === setup.cpuPresetId ? ' selected' : '') + '>' +
+      preset.name + ' / ' + preset.archetype +
+    '</option>';
+  }
+
+  return '<div id="title-screen" class="title-screen-shell">' +
+    '<div class="title-hero">' +
+      '<h1>星典戦記</h1>' +
+      '<p class="subtitle">— Chronicle of Stars —</p>' +
+      '<p class="title-description">固定順星典を選び、読み筋ごとの戦い方を試す Phase 7 構成。</p>' +
+    '</div>' +
+    '<div class="setup-grid">' +
+      '<div class="setup-panel">' +
+        '<label class="setup-label" for="player-preset-select">プレイヤー星典</label>' +
+        '<select id="player-preset-select" class="setup-select" onchange="updateSetupPreset(\'player\', this.value)">' +
+          playerOptions +
+        '</select>' +
+        renderPresetSummaryHTML('player', setup.playerPresetId) +
+      '</div>' +
+      '<div class="setup-panel">' +
+        '<label class="setup-label" for="cpu-preset-select">CPU星典</label>' +
+        '<select id="cpu-preset-select" class="setup-select" onchange="updateSetupPreset(\'cpu\', this.value)">' +
+          cpuOptions +
+        '</select>' +
+        renderPresetSummaryHTML('cpu', setup.cpuPresetId) +
+      '</div>' +
+    '</div>' +
+    '<div class="setup-footnote">デッキビルダーはまだ未実装。固定順星典の相性確認に集中するフェーズです。</div>' +
+    '<button id="btn-start" onclick="startGame()" data-action="start-game">星典を開く</button>' +
+  '</div>';
+}
+
+function renderTitleScreen() {
+  if (typeof document === 'undefined') return;
+  var container = document.getElementById('game-container');
+  if (!container) return;
+  container.innerHTML = renderTitleScreenHTML();
 }
 
 function syncUiStateWithGame(state) {
@@ -243,6 +359,8 @@ function getCardInteractionMeta(card, index, state) {
         meta.disabledReason = '星命はこのターン使用済み';
       } else if (state.player.sp < card.cost) {
         meta.disabledReason = 'SPが足りません';
+      } else if (typeof canResolveFateEffect === 'function' && !canResolveFateEffect(state.player, card)) {
+        meta.disabledReason = 'いまは効果を活かせません';
       } else {
         meta.clickable = true;
         meta.onClick = 'playerPlayCard(gameState, ' + index + ')';
@@ -400,6 +518,7 @@ function renderLaneHTML(player, isSelf, state) {
         '<span class="lane-badge">' + (isSelf ? 'SELF' : 'CPU') + '</span>' +
       '</div>' +
       '<div class="lane-chip-row">' +
+        '<span class="lane-chip lane-chip-preset">' + (player.presetName || '既定星典') + '</span>' +
         '<span class="lane-chip">星典 ' + remaining + '/' + total + '</span>' +
         '<span class="lane-chip">SP ' + player.sp + '</span>' +
         '<span class="lane-chip">場 ' + player.field.length + '/' + MAX_FIELD_ASTRALS + '</span>' +
@@ -447,6 +566,8 @@ function renderPhaseFocusHTML(state) {
     '</div>' +
     '<div class="phase-focus-text">' + hint + '</div>' +
     '<div class="phase-focus-meta">' +
+      '<span class="phase-focus-chip">P:' + (state.player.presetName || '-') + '</span>' +
+      '<span class="phase-focus-chip">C:' + (state.cpu.presetName || '-') + '</span>' +
       '<span class="phase-focus-chip">天窓 ' + state.player.skyWindow.length + '</span>' +
       '<span class="phase-focus-chip">ログ ' + state.log.length + '</span>' +
       '<span class="phase-focus-chip">次ページ ' +
@@ -997,7 +1118,7 @@ function renderGameOverHTML(state) {
   html += '</h1>';
   html += '<p class="game-over-detail">' + winnerName + 'の勝利（' + reason + '）</p>';
   html += '<p class="game-over-detail">ターン数: ' + state.turn + '</p>';
-  html += renderActionButton('もう一度プレイ', 'btn-restart', 'location.reload()', false, 'restart');
+  html += renderActionButton('星典選択へ戻る', 'btn-restart', 'returnToTitleScreen()', false, 'restart');
   html += renderLogHTML(state.log);
   html += '</div>';
   return html;

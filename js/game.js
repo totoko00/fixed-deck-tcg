@@ -14,6 +14,20 @@ function createGameOptions(options) {
   };
 }
 
+function normalizeChronicleSelection(options) {
+  var playerPresetId = options && options.playerPresetId ? options.playerPresetId : DEFAULT_PLAYER_CHRONICLE_PRESET_ID;
+  var cpuPresetId = options && options.cpuPresetId ? options.cpuPresetId : DEFAULT_CPU_CHRONICLE_PRESET_ID;
+  var playerPreset = getChroniclePreset(playerPresetId) || getChroniclePreset(DEFAULT_PLAYER_CHRONICLE_PRESET_ID);
+  var cpuPreset = getChroniclePreset(cpuPresetId) || getChroniclePreset(DEFAULT_CPU_CHRONICLE_PRESET_ID);
+
+  return {
+    playerPresetId: playerPreset.id,
+    cpuPresetId: cpuPreset.id,
+    playerPreset: playerPreset,
+    cpuPreset: cpuPreset
+  };
+}
+
 function shouldAutoRender(state) {
   return !state || !state.options || state.options.autoRender !== false;
 }
@@ -48,25 +62,39 @@ function syncGameState(state) {
  * ゲーム全体を初期化
  */
 function initGame(options) {
-  var playerChronicle = getPlayerChronicle();
-  var cpuChronicle = getCpuChronicle();
+  var chronicleSelection = normalizeChronicleSelection(options);
+  var playerChronicle = createChronicleFromPreset(chronicleSelection.playerPresetId);
+  var cpuChronicle = createChronicleFromPreset(chronicleSelection.cpuPresetId);
 
   gameState = {
     turn: 1,
     activePlayer: 'player', // プレイヤー先攻
     phase: 'start',
     readCount: 0,           // 今ターンのスタートフェイズで詠んだ枚数
-    player: createPlayer('player', playerChronicle),
-    cpu: createPlayer('cpu', cpuChronicle),
+    player: createPlayer('player', playerChronicle, {
+      presetId: chronicleSelection.playerPreset.id,
+      presetName: chronicleSelection.playerPreset.name,
+      presetArchetype: chronicleSelection.playerPreset.archetype
+    }),
+    cpu: createPlayer('cpu', cpuChronicle, {
+      presetId: chronicleSelection.cpuPreset.id,
+      presetName: chronicleSelection.cpuPreset.name,
+      presetArchetype: chronicleSelection.cpuPreset.archetype
+    }),
     isGameOver: false,
     winner: null,
     log: [],
     currentBattle: null,
-    options: createGameOptions(options)
+    options: createGameOptions(options),
+    setup: {
+      playerPresetId: chronicleSelection.playerPreset.id,
+      cpuPresetId: chronicleSelection.cpuPreset.id
+    }
   };
 
   // --- ゲーム開始処理 ---
   addLog(gameState, '★ 星典戦記 開幕 ★');
+  addLog(gameState, '📚 プレイヤー星典: ' + chronicleSelection.playerPreset.name + ' / CPU星典: ' + chronicleSelection.cpuPreset.name);
 
   // 1. 1ページ目の星霊を場に召喚（両方）
   setupInitialAstral(gameState, gameState.player, 'プレイヤー');
@@ -209,7 +237,7 @@ function playerPlayCard(state, skyWindowIndex) {
         return false;
       }
       if (!applyFateEffect(player, card, pageIndex)) {
-        addLog(state, '⚠️ SPが不足しています');
+        addLog(state, '⚠️ いまはその星命を活かせません');
         return false;
       }
       addLog(state, logFate(name, card.name, card.effectDescription));
@@ -666,6 +694,9 @@ function createCardSnapshot(card) {
 function createPlayerSnapshot(player) {
   return {
     id: player.id,
+    presetId: player.presetId || null,
+    presetName: player.presetName || null,
+    presetArchetype: player.presetArchetype || null,
     sp: player.sp,
     chronicleIndex: player.chronicleIndex,
     remainingPages: getRemainingPages(player),
@@ -721,6 +752,7 @@ function createGameSnapshot(state) {
     readCount: currentState.readCount,
     isGameOver: currentState.isGameOver,
     winner: currentState.winner,
+    setup: cloneValue(currentState.setup || {}),
     player: createPlayerSnapshot(currentState.player),
     cpu: createPlayerSnapshot(currentState.cpu),
     currentBattle: createBattleSnapshot(currentState.currentBattle),
@@ -729,6 +761,13 @@ function createGameSnapshot(state) {
 }
 
 function renderGameToText(state) {
+  if (!state) {
+    return JSON.stringify({
+      mode: 'title',
+      setup: typeof getSetupSelection === 'function' ? getSetupSelection() : null
+    }, null, 2);
+  }
+
   return JSON.stringify(createGameSnapshot(state), null, 2);
 }
 
@@ -947,8 +986,16 @@ function runPhase4Simulation() {
   battleState.player.sp = 0;
 
   pushSimulationCheck(report, cpuBattlePhase(battleState) === true, 'CPUが攻撃可能な場面で星撃宣言する');
-  pushSimulationCheck(report, battleState.currentBattle.attackAstral.id === 'astral_004', 'CPUが共鳴する星霊を優先して攻撃する');
-  pushSimulationCheck(report, battleState.currentBattle.attackSpell.id === 'spell_atk_004', 'CPUが共鳴する攻星術を優先して選ぶ');
+  pushSimulationCheck(report,
+    hasResonance(battleState.currentBattle.attackAstral, battleState.currentBattle.attackSpell),
+    'CPUが共鳴する組み合わせを優先して選ぶ');
+  pushSimulationCheck(report,
+    calcAttackPower(
+      battleState.currentBattle.attackAstral,
+      battleState.currentBattle.attackSpell,
+      battleState.currentBattle.overcharge
+    ) >= 5,
+    'CPUが最低限の打点を確保できる攻撃線を選ぶ');
 
   var defendState = initGame({
     sync: true,
@@ -1099,7 +1146,67 @@ function getAutoDefenseReserve(player, opponent) {
   return reserve;
 }
 
-function selectAutoFate(player, opponent) {
+function scoreFateCardForPlayer(player, opponent, fate, basePlan) {
+  var score = 0;
+  var amount = getFateEffectAmount(fate);
+
+  switch (fate.effectType) {
+    case 'chronicle_restore':
+      if (getRemainingPages(player) <= 3) score = 20;
+      else if (getRemainingPages(player) <= 6) score = 14;
+      else if (getRemainingPages(player) <= 8) score = 8;
+      score += (fate.aiHints && fate.aiHints.recovery) || 0;
+      break;
+
+    case 'sp_charge':
+      if (player.sp <= 2) score += 10;
+      else if (player.sp <= 4) score += 6;
+
+      if (player.field.length === 0 &&
+          getAvailableAstrals(player.skyWindow, player.sp).length === 0 &&
+          getAvailableAstrals(player.skyWindow, player.sp - fate.cost + amount).length > 0) {
+        score += 8;
+      }
+
+      var chargedSp = player.sp - fate.cost + amount;
+      var chargePlan = selectBestAttackCombo(
+        player,
+        getAvailableAttackSpells(player.skyWindow, chargedSp),
+        opponent,
+        { spAvailable: chargedSp }
+      );
+
+      if (chargePlan && (!basePlan || chargePlan.score > basePlan.score + 4)) {
+        score += 6;
+      }
+      score += (fate.aiHints && fate.aiHints.tempo) || 0;
+      break;
+
+    case 'power_buff':
+      if (player.field.length > 0) {
+        var buffTargetIndex = selectFateBuffTargetIndex(player, fate);
+        var buffPlan = selectBestAttackCombo(
+          player,
+          getAvailableAttackSpells(player.skyWindow, player.sp - fate.cost),
+          opponent,
+          {
+            spAvailable: player.sp - fate.cost,
+            buffTargetIndex: buffTargetIndex,
+            buffAmount: amount
+          }
+        );
+
+        if (buffPlan && buffPlan.successLikely) score += 8;
+        if (buffPlan && (!basePlan || buffPlan.score > basePlan.score + 2)) score += 5;
+      }
+      score += (fate.aiHints && fate.aiHints.aggression) || 0;
+      break;
+  }
+
+  return score;
+}
+
+function selectBestFateForPlayer(player, opponent) {
   var fates = getAvailableFates(player.skyWindow, player.sp, player.usedFate);
 
   if (fates.length === 0) return null;
@@ -1111,52 +1218,7 @@ function selectAutoFate(player, opponent) {
 
   for (var i = 0; i < fates.length; i++) {
     var fate = fates[i];
-    var score = 0;
-
-    switch (fate.effectType) {
-      case 'chronicle_restore':
-        if (getRemainingPages(player) <= 3) score = 20;
-        else if (getRemainingPages(player) <= 6) score = 14;
-        else if (getRemainingPages(player) <= 8) score = 8;
-        break;
-
-      case 'sp_charge':
-        if (player.sp <= 2) score += 10;
-        else if (player.sp <= 4) score += 6;
-
-        if (player.field.length === 0 &&
-            getAvailableAstrals(player.skyWindow, player.sp).length === 0 &&
-            getAvailableAstrals(player.skyWindow, player.sp - fate.cost + fate.value).length > 0) {
-          score += 8;
-        }
-
-        var chargedSp = player.sp - fate.cost + fate.value;
-        var chargePlan = selectBestAttackCombo(
-          player,
-          getAvailableAttackSpells(player.skyWindow, chargedSp),
-          opponent,
-          { spAvailable: chargedSp }
-        );
-
-        if (chargePlan && (!basePlan || chargePlan.score > basePlan.score + 4)) {
-          score += 6;
-        }
-        break;
-
-      case 'power_buff':
-        if (player.field.length > 0) {
-          var buffPlan = selectBestAttackCombo(
-            player,
-            getAvailableAttackSpells(player.skyWindow, player.sp - fate.cost),
-            opponent,
-            { spAvailable: player.sp - fate.cost, firstAstralBonus: fate.value }
-          );
-
-          if (buffPlan && buffPlan.successLikely) score += 8;
-          if (buffPlan && (!basePlan || buffPlan.score > basePlan.score + 2)) score += 5;
-        }
-        break;
-    }
+    var score = scoreFateCardForPlayer(player, opponent, fate, basePlan);
 
     if (score > bestScore) {
       bestScore = score;
@@ -1165,6 +1227,10 @@ function selectAutoFate(player, opponent) {
   }
 
   return bestFate;
+}
+
+function selectAutoFate(player, opponent) {
+  return selectBestFateForPlayer(player, opponent);
 }
 
 function executeAutoStartPhase(state) {
@@ -1348,7 +1414,10 @@ function executeAutoTurnForActivePlayer(state) {
 
 function runPhase5Simulation(options) {
   var maxHalfTurns = options && options.maxHalfTurns ? options.maxHalfTurns : 80;
+  var initOptions = options && options.initOptions ? options.initOptions : null;
   var state = initGame({
+    playerPresetId: initOptions && initOptions.playerPresetId,
+    cpuPresetId: initOptions && initOptions.cpuPresetId,
     sync: true,
     autoRender: false,
     autoCpu: false
@@ -1406,6 +1475,7 @@ function runPhase5Simulation(options) {
     winner: state.winner,
     gameOver: state.isGameOver,
     finalTurn: state.turn,
+    setup: cloneValue(state.setup),
     remainingPages: {
       player: getRemainingPages(state.player),
       cpu: getRemainingPages(state.cpu)
@@ -1444,4 +1514,107 @@ function runPhase5Simulation(options) {
     state: state,
     report: report
   };
+}
+
+function runPhase7Simulation(options) {
+  var presetIds = Object.keys(CHRONICLE_PRESETS);
+  var report = {
+    passed: true,
+    checks: [],
+    presetValidation: validateAllChroniclePresets(),
+    matchupResults: [],
+    balance: {}
+  };
+  var winsByPreset = {};
+  var gamesByPreset = {};
+  var i;
+  var j;
+  var playerPresetId;
+  var cpuPresetId;
+  var validation;
+  var simulation;
+  var winnerPresetId;
+  var presetWinRate;
+
+  for (i = 0; i < presetIds.length; i++) {
+    winsByPreset[presetIds[i]] = 0;
+    gamesByPreset[presetIds[i]] = 0;
+    validation = report.presetValidation[presetIds[i]];
+    pushSimulationCheck(report, validation.valid, 'プリセット ' + presetIds[i] + ' が静的検証を通過する');
+  }
+
+  for (i = 0; i < presetIds.length; i++) {
+    playerPresetId = presetIds[i];
+
+    for (j = 0; j < presetIds.length; j++) {
+      cpuPresetId = presetIds[j];
+      simulation = runPhase5Simulation({
+        maxHalfTurns: options && options.maxHalfTurns ? options.maxHalfTurns : 80,
+        initOptions: {
+          playerPresetId: playerPresetId,
+          cpuPresetId: cpuPresetId
+        }
+      });
+
+      report.matchupResults.push({
+        playerPresetId: playerPresetId,
+        cpuPresetId: cpuPresetId,
+        winner: simulation.report.summary.winner,
+        finalTurn: simulation.report.summary.finalTurn,
+        clashCount: simulation.report.summary.clashCount,
+        guardCount: simulation.report.summary.guardCount,
+        overchargeCount: simulation.report.summary.overchargeCount,
+        passed: simulation.report.passed
+      });
+
+      pushSimulationCheck(
+        report,
+        simulation.report.passed,
+        '対戦 ' + playerPresetId + ' vs ' + cpuPresetId + ' が最後まで完走する'
+      );
+
+      gamesByPreset[playerPresetId]++;
+      gamesByPreset[cpuPresetId]++;
+
+      if (simulation.report.summary.winner === 'player') {
+        winnerPresetId = playerPresetId;
+      } else if (simulation.report.summary.winner === 'cpu') {
+        winnerPresetId = cpuPresetId;
+      } else {
+        winnerPresetId = null;
+      }
+
+      if (winnerPresetId) {
+        winsByPreset[winnerPresetId]++;
+      }
+    }
+  }
+
+  for (i = 0; i < presetIds.length; i++) {
+    presetWinRate = gamesByPreset[presetIds[i]] > 0 ?
+      winsByPreset[presetIds[i]] / gamesByPreset[presetIds[i]] :
+      0;
+
+    report.balance[presetIds[i]] = {
+      wins: winsByPreset[presetIds[i]],
+      games: gamesByPreset[presetIds[i]],
+      winRate: Math.round(presetWinRate * 1000) / 1000
+    };
+
+    pushSimulationCheck(
+      report,
+      presetWinRate >= 0.35 && presetWinRate <= 0.65,
+      'プリセット ' + presetIds[i] + ' の勝率が 35%〜65% に収まる'
+    );
+  }
+
+  console.group('Phase 7 Simulation');
+  console.log('passed:', report.passed);
+  console.table(report.checks);
+  console.log('presetValidation:', report.presetValidation);
+  console.table(report.balance);
+  console.log('matchups:', report.matchupResults);
+  console.groupEnd();
+
+  return report;
 }

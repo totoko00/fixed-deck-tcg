@@ -56,7 +56,14 @@ function calcCpuProjectedAttackPower(astral, spell, bonusPower) {
 }
 
 function getCpuAttackBonusForAstral(cpu, astral, options) {
-  if (!options || !options.firstAstralBonus) return 0;
+  if (!options) return 0;
+  if (typeof options.buffTargetIndex === 'number' &&
+      options.buffTargetIndex >= 0 &&
+      options.buffTargetIndex < cpu.field.length &&
+      astral === cpu.field[options.buffTargetIndex]) {
+    return options.buffAmount || options.firstAstralBonus || 0;
+  }
+  if (!options.firstAstralBonus) return 0;
   if (cpu.field.length === 0) return 0;
   return astral === cpu.field[0] ? options.firstAstralBonus : 0;
 }
@@ -74,6 +81,11 @@ function countCpuResonantSpells(cpu, element, timing) {
   return count;
 }
 
+function getCpuAiHint(card, key) {
+  if (!card || !card.aiHints) return 0;
+  return card.aiHints[key] || 0;
+}
+
 function scoreCpuAstralCard(cpu, astral) {
   var attackMatches = countCpuResonantSpells(cpu, astral.element, 'attack');
   var defenseMatches = countCpuResonantSpells(cpu, astral.element, 'defense');
@@ -81,7 +93,10 @@ function scoreCpuAstralCard(cpu, astral) {
   return astral.power * 3 +
     attackMatches * 4 +
     defenseMatches * 3 -
-    astral.cost * 2;
+    astral.cost * 2 +
+    getCpuAiHint(astral, 'aggression') +
+    getCpuAiHint(astral, 'defense') * 2 +
+    getCpuAiHint(astral, 'curve');
 }
 
 function selectBestCpuAstral(cpu, maxCost) {
@@ -205,8 +220,12 @@ function selectBestAttackCombo(cpu, spells, opponent, options) {
           if (hasResonance(astral, spell)) score += 4;
           if (totalDamage >= getRemainingPages(opponent)) score += 18;
           if (opponent.field.length === 0) score += 6;
+          score += getCpuAiHint(spell, 'aggression');
+          score += getCpuAiHint(spell, 'burst');
+          score += getCpuAiHint(spell, 'finisher') * 2;
         } else {
           score = attackPower - defensePreview.defensePower - defensePreview.totalCost - 12;
+          score += getCpuAiHint(spell, 'stability');
         }
 
         if (score > bestScore) {
@@ -230,71 +249,7 @@ function selectBestAttackCombo(cpu, spells, opponent, options) {
 }
 
 function selectCpuFate(state) {
-  var cpu = state.cpu;
-  var player = state.player;
-  var fates = getAvailableFates(cpu.skyWindow, cpu.sp, cpu.usedFate);
-
-  if (fates.length === 0) return null;
-
-  var basePlan = selectBestAttackCombo(cpu, getAvailableAttackSpells(cpu.skyWindow, cpu.sp), player);
-  var bestFate = null;
-  var bestScore = 0;
-
-  for (var i = 0; i < fates.length; i++) {
-    var fate = fates[i];
-    var score = 0;
-
-    switch (fate.effectType) {
-      case 'chronicle_restore':
-        if (getRemainingPages(cpu) <= 3) score = 20;
-        else if (getRemainingPages(cpu) <= 6) score = 14;
-        else if (getRemainingPages(cpu) <= 8) score = 8;
-        break;
-
-      case 'sp_charge':
-        if (cpu.sp <= 2) score += 10;
-        else if (cpu.sp <= 4) score += 6;
-
-        if (cpu.field.length === 0 &&
-            getAvailableAstrals(cpu.skyWindow, cpu.sp).length === 0 &&
-            getAvailableAstrals(cpu.skyWindow, cpu.sp - fate.cost + fate.value).length > 0) {
-          score += 8;
-        }
-
-        var chargePlan = selectBestAttackCombo(
-          cpu,
-          getAvailableAttackSpells(cpu.skyWindow, cpu.sp - fate.cost + fate.value),
-          player,
-          { spAvailable: cpu.sp - fate.cost + fate.value }
-        );
-
-        if (chargePlan && (!basePlan || chargePlan.score > basePlan.score + 4)) {
-          score += 6;
-        }
-        break;
-
-      case 'power_buff':
-        if (cpu.field.length > 0) {
-          var buffPlan = selectBestAttackCombo(
-            cpu,
-            getAvailableAttackSpells(cpu.skyWindow, cpu.sp - fate.cost),
-            player,
-            { spAvailable: cpu.sp - fate.cost, firstAstralBonus: fate.value }
-          );
-
-          if (buffPlan && buffPlan.successLikely) score += 8;
-          if (buffPlan && (!basePlan || buffPlan.score > basePlan.score + 2)) score += 5;
-        }
-        break;
-    }
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestFate = fate;
-    }
-  }
-
-  return bestFate;
+  return selectBestFateForPlayer(state.cpu, state.player);
 }
 
 function selectCpuGuardAstralIndex(player) {
